@@ -1,61 +1,69 @@
-module.exports = function(RED){
+module.exports = function (RED) {
     "use strict"
-    var SurePet = require('sure-pet-care-client');
+    const SurePet = require('sure-pet-care-client');
 
-    function SurePetNode(config){
+    function SurePetNode(config) {
         RED.nodes.createNode(this, config);
-        this.surepet = RED.nodes.getNode(config.surepet);
-        var node = this;
-        //console.log(config);
-        node.on('input', function(msg){
+        const node = this;
+        node.surepet = RED.nodes.getNode(config.surepet);
 
-            if(config.mode === 'list_pets'){
-            this.surepet.client.getPets().then((pets) =>{
-                msg.payload = {
-                    pets: pets
-                }
-                node.send(msg)
-            })
-        } else if(config.mode === "get_status"){
-            this.surepet.client.getState().then((state) => {
-                msg.payload = state;
-                node.send(msg);
-            })
+        node.on('input', function (msg) {
 
-        }
-            
-            /*
-            msg.payload = {
-                surepet: this.surepet,
-                pets: 
+            // special case, if `topic` === connect, then re-authenticate
+            if (msg.topic === "connect") {
+                node.surepet.client = new SurePet.SurePetCareClient();
+                node.surepet.client.authenticate(msg.username || msg.payload?.username, msg.password || msg.payload?.password)
+                .then(() => node.status({ fill: "green", shape: "dot", text: "Connected." }))
+                .catch(err => {
+                    node.error(err, msg)
+                    node.status({ fill: "red", shape: "ring", text: err })
+                })
+                return
             }
-            node.send(msg);*/
+
+            // normal operation
+            if (config.mode === 'list_pets') {
+                node.surepet.client.getPets().then((pets) => {
+                    msg.payload = {
+                        pets: pets
+                    }
+                    node.send(msg)
+                }).catch((err) => {
+                    node.error(err, msg);
+                })
+            } else if (config.mode === "get_status") {
+                node.surepet.client.getState().then((state) => {
+                    msg.payload = state;
+                    node.send(msg);
+                }).catch((err) => {
+                    node.error(err, msg);
+                })
+            } 
         });
     }
     RED.nodes.registerType("surepet", SurePetNode);
 
-
-
-    function SurePetCredentials(n){
+    function SurePetCredentials(n) {
         RED.nodes.createNode(this, n);
-        this.username = n.username || this.credentials.username;
-        this.password = n.password || this.credentials.password;
-        this.client = new SurePet.SurePetCareClient();
-        if (this.username && this.password){
-            this.log("We have a username and password, attempting to authenticiate.")
-            try{
-                this.client.authenticate(this.username, this.password);
-                this.status({fill:"green",shape:"dot",text:"Connected."});
-            } catch (err){
-                this.status({fill:"red",shape:"ring",text:err});
-            }
-           
+        const node = this
+        node.username = n.username || node.credentials.username;
+        node.password = n.password || node.credentials.password;
+        node.client = new SurePet.SurePetCareClient();
+        if (node.username && node.password) {
+            node.log("We have a username and password, attempting to authenticate.")
+            node.client.authenticate(node.username, node.password)
+                .then(() => node.status({ fill: "green", shape: "dot", text: "Connected." }))
+                .catch(err => {
+                    node.status({ fill: "red", shape: "ring", text: err })
+                    node.error(err)
+                })
         }
     }
-    RED.nodes.registerType("surepet-credentials",SurePetCredentials,{
+
+    RED.nodes.registerType("surepet-credentials", SurePetCredentials, {
         credentials: {
-            username: {type:"text"},
-            password: {type:"password"}
+            username: { type: "text" },
+            password: { type: "password" }
         }
     });
 }
